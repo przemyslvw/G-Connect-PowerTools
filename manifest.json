@@ -8,5 +8,18 @@
   ],
   "host_permissions": [
     "*://connect.garmin.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://connect.garmin.com/*"
+      ],
+      "js": [
+        "scripts/content.js"
+      ],
+      "css": [
+        "ui/styles.css"
+      ]
+    }
   ]
 }

@@ -1,0 +1,103 @@
+/* PowerTools Modal Styles */
+.powertools-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 9999999; /* Ensure it stays on top of Garmin UI */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.powertools-modal {
+    background-color: white;
+    border-radius: 8px;
+    width: 400px;
+    max-width: 90vw;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    font-family: Arial, sans-serif;
+    color: #333;
+}
+
+.powertools-modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.powertools-modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+#powertools-close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    color: #888;
+    transition: color 0.2s;
+}
+
+#powertools-close-btn:hover {
+    color: #333;
+}
+
+.powertools-modal-body {
+    padding: 20px;
+}
+
+.powertools-form-group {
+    margin-bottom: 15px;
+}
+
+.powertools-form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    font-size: 14px;
+    color: #555;
+}
+
+.powertools-form-group input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font-family: inherit;
+    font-size: 14px;
+}
+
+.powertools-modal-footer {
+    padding: 16px 20px;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.powertools-btn {
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    border: none;
+    font-weight: bold;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+.powertools-btn-primary {
+    background-color: #007cc3;
+    color: white;
+}
+
+.powertools-btn-primary:hover {
+    background-color: #005a8f;
+}
