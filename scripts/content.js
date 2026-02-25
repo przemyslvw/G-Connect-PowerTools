@@ -247,14 +247,13 @@ function injectCustomButton() {
             ourBtn.id = 'powertools-schedule-btn';
             ourBtn.textContent = 'Zaplanuj cyklicznie (PowerTools)';
 
-            // Kopiowanie klas by wygladał jak oryginalny
+            // Kopiowanie klas by wygladał jak oryginalny, wtapiając się w tło (jako link)
             ourBtn.className = addToCalendarBtn.className;
 
-            // Małe poprawki styli by pasował wszedzie
-            ourBtn.style.marginLeft = '10px';
-            ourBtn.style.marginTop = '10px';
-            ourBtn.style.backgroundColor = '#007cc3';
-            ourBtn.style.color = '#fff';
+            // Garmin używa div'ów jako wrapperów dla tych przycisków
+            const wrapperDiv = document.createElement('div');
+            wrapperDiv.style.marginTop = '16px'; // Odstęp typowy dla list Garmina
+            wrapperDiv.appendChild(ourBtn);
 
             ourBtn.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -262,8 +261,11 @@ function injectCustomButton() {
                 openPowerToolsModal();
             });
 
-            addToCalendarBtn.parentNode.insertBefore(ourBtn, addToCalendarBtn.nextSibling);
-            console.log('[PowerTools] Przycisk schedule zainjcowany.');
+            // Wstawienie całego wrappera pod oryginalnym wrapperem
+            const parentWrapper = addToCalendarBtn.parentNode;
+            parentWrapper.parentNode.insertBefore(wrapperDiv, parentWrapper.nextSibling);
+
+            console.log('[PowerTools] Przycisk schedule zainjcowany i poprawnie ostylowany.');
         }
     }
 }
