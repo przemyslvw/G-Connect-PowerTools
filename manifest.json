@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "G-Connect PowerTools",
+  "version": "1.0.0",
+  "description": "Garmin Connect custom enhancements.",
+  "permissions": [
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://connect.garmin.com/*"
+  ]
+}
