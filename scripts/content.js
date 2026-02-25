@@ -1,6 +1,59 @@
 // content.js
 console.log('Garmin PowerTools: Content Script Loaded');
 
+// --- Wstrzykiwacz do wyciągniecia CSRF z pamięci strony ---
+const injectCode = `
+    (function() {
+        let stolenToken = '';
+        
+        // Zabezpieczenie: Przechwytywanie Fetch-a Garmina
+        const originalFetch = window.fetch;
+        window.fetch = async function(...args) {
+            if (args[1] && args[1].headers) {
+                let token = null;
+                const h = args[1].headers;
+                if (h instanceof Headers) {
+                    token = h.get('Connect-Csrf-Token') || h.get('NK');
+                } else if (typeof h === 'object') {
+                    token = h['Connect-Csrf-Token'] || h['connect-csrf-token'] || h['NK'];
+                }
+                
+                if (token && token !== stolenToken && token !== 'NT') {
+                    stolenToken = token;
+                    window.postMessage({ type: 'PT_CSRF_TOKEN', token: token }, '*');
+                }
+            }
+            return originalFetch.apply(this, args);
+        };
+
+        // Zabezpieczenie: Przechwytywanie XHR Garmina (starsze API)
+        const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
+        XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+            if (name.toLowerCase() === 'connect-csrf-token' && value) {
+                if (value !== stolenToken) {
+                    stolenToken = value;
+                    window.postMessage({ type: 'PT_CSRF_TOKEN', token: value }, '*');
+                }
+            }
+            return origSetHeader.apply(this, arguments);
+        };
+    })();
+`;
+
+const script = document.createElement('script');
+script.textContent = injectCode;
+(document.head || document.documentElement).appendChild(script);
+script.remove();
+
+let csrfToken = '';
+
+window.addEventListener('message', function (event) {
+    if (event.source !== window || !event.data || event.data.type !== 'PT_CSRF_TOKEN') return;
+    csrfToken = event.data.token;
+    console.log('[PowerTools] Pomyślnie przechwycono token zabezpieczający CSRF:', csrfToken);
+});
+// -----------------------------------------------------------
+
 function createPowerToolsModal() {
     const modalHTML = `
         <div id="powertools-modal-backdrop" class="powertools-modal-backdrop" style="display: none;">
@@ -40,10 +93,8 @@ function openPowerToolsModal() {
     const backdrop = document.getElementById('powertools-modal-backdrop');
     if (backdrop) {
         backdrop.style.display = 'flex';
-        // Set default start date to today
         document.getElementById('pt-start-date').valueAsDate = new Date();
 
-        // Default end date to 1 month from now
         let endDate = new Date();
         endDate.setMonth(endDate.getMonth() + 1);
         document.getElementById('pt-end-date').valueAsDate = endDate;
@@ -64,7 +115,6 @@ function generateDates(startDateStr, frequencyDays, endDateStr) {
     const freq = parseInt(frequencyDays, 10);
 
     let current = new Date(start);
-    // Zabezpieczenie przed pętlą nieskończoną
     if (freq <= 0) return dates;
 
     while (current <= end) {
@@ -72,7 +122,6 @@ function generateDates(startDateStr, frequencyDays, endDateStr) {
         const month = String(current.getMonth() + 1).padStart(2, '0');
         const day = String(current.getDate()).padStart(2, '0');
         dates.push(`${year}-${month}-${day}`);
-
         current.setDate(current.getDate() + freq);
     }
     return dates;
@@ -81,26 +130,46 @@ function generateDates(startDateStr, frequencyDays, endDateStr) {
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function executeScheduling(dates) {
-    // ID treningu można pobrać z URL: np. https://connect.garmin.com/modern/workout/1485547083
-    const urlParts = window.location.pathname.split('/');
-    const workoutId = urlParts[urlParts.length - 1];
+    // Proba wyciagniecia ID z kalendarza lub podstrony treningu
+    let workoutId = null;
+
+    // 1. Sprawdzamy adres URL (jesli uzytkownik jest na podstronie treningu)
+    const urlMatch = window.location.pathname.match(/workout\/(\d+)/);
+    if (urlMatch) {
+        workoutId = urlMatch[1];
+    } else {
+        // 2. Jeśli jest w kalendarzu - szukamy pola select wybranego treningu (po prawej stronie)
+        const selects = document.querySelectorAll('select');
+        for (let sel of selects) {
+            // Zazwyczaj Garmin trzyma ID treningu w .value tego select box'a w sidebarze
+            if (sel.value && !isNaN(sel.value) && sel.options.length > 0) {
+                workoutId = sel.value;
+                break;
+            }
+        }
+    }
 
     if (!workoutId || isNaN(workoutId)) {
-        alert('Nie udało się pobrać ID treningu z URL. Upewnij się, że jesteś na stronie pojedynczego treningu.');
+        alert('Nie można znaleźć ID treningu.\\nWejdź w zakładkę "Treningi" i wejdź na stronę konkretnego treningu przed zaplanowaniem.');
         return;
     }
 
-    // Garmin Czasem wymaga konkretnego CSRF. Przyjęta taktyka u użytkownika to nagłówek NK: NT
     const headers = {
         'Content-Type': 'application/json',
-        'NK': 'NT', // Popularny bypass anti-csrf Garmina opisany przez usera
         'di-backend': 'connectapi.garmin.com',
         'X-Requested-With': 'XMLHttpRequest'
     };
 
-    // Próba wydobycia lokalnego CSRF jeśli istnieje w localStorage (np. GARMIN-SSO-CUST-GUID albo Connect-Csrf-Token)
-    // Jednak polegamy głównie na NK: NT jako header bypass
-    // W nagłówkach w request.txt widać pole Connect-Csrf-Token
+    if (csrfToken) {
+        headers['Connect-Csrf-Token'] = csrfToken;
+        headers['NK'] = 'NT';
+    } else {
+        console.warn('[PowerTools] UWAGA! Nie przechwycono tokena CSRF. Może wystąpić błąd 403 Forbidden.');
+        // Próba ratunku fallbackiem na cookies/localStorage
+        headers['NK'] = 'NT';
+        const ssoGuid = localStorage.getItem('GARMIN-SSO-CUST-GUID');
+        if (ssoGuid) headers['Connect-Csrf-Token'] = ssoGuid;
+    }
 
     let successCount = 0;
     let errorCount = 0;
@@ -118,22 +187,24 @@ async function executeScheduling(dates) {
                 console.log(`[PowerTools] Sukces: ${date}`);
                 successCount++;
             } else if (response.status === 409) {
-                console.warn(`[PowerTools] Trening na ${date} już istnieje w kalendarzu (HTTP 409).`);
+                console.warn(`[PowerTools] Trening na ${date} już istnieje (HTTP 409).`);
+                errorCount++;
+            } else if (response.status === 403) {
+                console.error(`[PowerTools] Błąd 403! Brak autoryzacji CSRF. Upewnij się, że jesteś zalogowany, a Garmin załadował poprawnie stronę.`);
                 errorCount++;
             } else {
                 console.error(`[PowerTools] Błąd ${response.status} na datę ${date}`);
                 errorCount++;
             }
         } catch (error) {
-            console.error(`[PowerTools] Wyjątek podczas wysyłania zapytania na ${date}:`, error);
+            console.error(`[PowerTools] Wyjątek podczas wysyłania:`, error);
             errorCount++;
         }
 
-        // Rate-limiting po każdym strzale - 1000ms by uniknąć zablokowania
-        await sleep(1000);
+        await sleep(1000); // 1 sekunda limitu by nie wkurzy firewalla
     }
 
-    alert(`[PowerTools] Zakończono!\\nDodano pomyślnie: ${successCount}\\nPominięto/Błędy (np. już istnieje): ${errorCount}`);
+    alert(`[PowerTools] Zakończono!\\nDodano pomyślnie: ${successCount}\\nPominięto/Błędy (np. uzyj recznie przycisku 'Zapisz' raz aby aktywowac Token!): ${errorCount}\\n\\nPrzeładuj kalendarz aby sprawdzić efekty.`);
 }
 
 async function submitPowerToolsModal() {
@@ -152,23 +223,22 @@ async function submitPowerToolsModal() {
         return;
     }
 
-    console.log('[PowerTools] Wygenerowane daty:', scheduledDates);
-
-    // Zamykamy modal przed procesowaniem
     closePowerToolsModal();
 
-    // Wywołanie logiki API
-    const confirmMsg = `Wygenerowano ${scheduledDates.length} terminów.\\nCzy chcesz rozesłać te zapytania do kalendarza Garmin?`;
-    if (confirm(confirmMsg)) {
+    if (confirm(`Wygenerowano ${scheduledDates.length} terminów.\\nCzy chcesz rozesłać te zapytania do kalendarza Garmin?`)) {
         await executeScheduling(scheduledDates);
     }
 }
 
 function injectCustomButton() {
-    // Look for button with text "Dodaj do kalendarza" or "Add to Calendar"
+    // Look for button with text "Dodaj do kalendarza", "Zapisz", or "Add to Calendar"
     const buttons = Array.from(document.querySelectorAll('button, a, div[role="button"]'));
     const addToCalendarBtn = buttons.find(b =>
-        (b.innerText && (b.innerText.includes('Dodaj do kalendarza') || b.innerText.includes('Add to Calendar')))
+    (b.innerText && (
+        b.innerText.trim() === 'Dodaj do kalendarza' ||
+        b.innerText.trim() === 'Zapisz' ||
+        b.innerText.includes('Add to Calendar')
+    ))
     );
 
     if (addToCalendarBtn) {
@@ -176,9 +246,13 @@ function injectCustomButton() {
             const ourBtn = document.createElement('button');
             ourBtn.id = 'powertools-schedule-btn';
             ourBtn.textContent = 'Zaplanuj cyklicznie (PowerTools)';
+
+            // Kopiowanie klas by wygladał jak oryginalny
             ourBtn.className = addToCalendarBtn.className;
 
+            // Małe poprawki styli by pasował wszedzie
             ourBtn.style.marginLeft = '10px';
+            ourBtn.style.marginTop = '10px';
             ourBtn.style.backgroundColor = '#007cc3';
             ourBtn.style.color = '#fff';
 
@@ -189,7 +263,7 @@ function injectCustomButton() {
             });
 
             addToCalendarBtn.parentNode.insertBefore(ourBtn, addToCalendarBtn.nextSibling);
-            console.log('Garmin PowerTools: Custom schedule button injected.');
+            console.log('[PowerTools] Przycisk schedule zainjcowany.');
         }
     }
 }
