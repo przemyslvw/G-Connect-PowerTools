@@ -3,6 +3,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](http://makeapullrequest.com)
 
+![Zrzut ekranu z planowania treningów](assets/screenshot.png)
+
+![Zrzut ekranu z planowania treningów](assets/screenshot2.png)
+
 A browser extension (Chrome/Edge/Brave) that adds the missing recurring workout scheduling feature directly from the workout editor in Garmin Connect Web.
 
 ## 🎯 Project Goal
