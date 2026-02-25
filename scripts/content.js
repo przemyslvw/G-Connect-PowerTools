@@ -57,15 +57,111 @@ function closePowerToolsModal() {
     }
 }
 
-function submitPowerToolsModal() {
+function generateDates(startDateStr, frequencyDays, endDateStr) {
+    const dates = [];
+    const start = new Date(startDateStr);
+    const end = new Date(endDateStr);
+    const freq = parseInt(frequencyDays, 10);
+
+    let current = new Date(start);
+    // Zabezpieczenie przed pętlą nieskończoną
+    if (freq <= 0) return dates;
+
+    while (current <= end) {
+        const year = current.getFullYear();
+        const month = String(current.getMonth() + 1).padStart(2, '0');
+        const day = String(current.getDate()).padStart(2, '0');
+        dates.push(`${year}-${month}-${day}`);
+
+        current.setDate(current.getDate() + freq);
+    }
+    return dates;
+}
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function executeScheduling(dates) {
+    // ID treningu można pobrać z URL: np. https://connect.garmin.com/modern/workout/1485547083
+    const urlParts = window.location.pathname.split('/');
+    const workoutId = urlParts[urlParts.length - 1];
+
+    if (!workoutId || isNaN(workoutId)) {
+        alert('Nie udało się pobrać ID treningu z URL. Upewnij się, że jesteś na stronie pojedynczego treningu.');
+        return;
+    }
+
+    // Garmin Czasem wymaga konkretnego CSRF. Przyjęta taktyka u użytkownika to nagłówek NK: NT
+    const headers = {
+        'Content-Type': 'application/json',
+        'NK': 'NT', // Popularny bypass anti-csrf Garmina opisany przez usera
+        'di-backend': 'connectapi.garmin.com',
+        'X-Requested-With': 'XMLHttpRequest'
+    };
+
+    // Próba wydobycia lokalnego CSRF jeśli istnieje w localStorage (np. GARMIN-SSO-CUST-GUID albo Connect-Csrf-Token)
+    // Jednak polegamy głównie na NK: NT jako header bypass
+    // W nagłówkach w request.txt widać pole Connect-Csrf-Token
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const date of dates) {
+        console.log(`[PowerTools] Planowanie na ${date}...`);
+        try {
+            const response = await fetch(`https://connect.garmin.com/gc-api/workout-service/schedule/${workoutId}`, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({ date: date })
+            });
+
+            if (response.ok) {
+                console.log(`[PowerTools] Sukces: ${date}`);
+                successCount++;
+            } else if (response.status === 409) {
+                console.warn(`[PowerTools] Trening na ${date} już istnieje w kalendarzu (HTTP 409).`);
+                errorCount++;
+            } else {
+                console.error(`[PowerTools] Błąd ${response.status} na datę ${date}`);
+                errorCount++;
+            }
+        } catch (error) {
+            console.error(`[PowerTools] Wyjątek podczas wysyłania zapytania na ${date}:`, error);
+            errorCount++;
+        }
+
+        // Rate-limiting po każdym strzale - 1000ms by uniknąć zablokowania
+        await sleep(1000);
+    }
+
+    alert(`[PowerTools] Zakończono!\\nDodano pomyślnie: ${successCount}\\nPominięto/Błędy (np. już istnieje): ${errorCount}`);
+}
+
+async function submitPowerToolsModal() {
     const startDate = document.getElementById('pt-start-date').value;
     const frequency = document.getElementById('pt-frequency').value;
     const endDate = document.getElementById('pt-end-date').value;
 
-    console.log('PowerTools - zebrane dane:', { startDate, frequency, endDate });
-    alert('Dane zebrane. Logika API (Krok 4) będzie tu wykonywana.\\n\\nStart: ' + startDate + '\\nCo: ' + frequency + ' dni\\nKoniec: ' + endDate);
+    if (!startDate || !frequency || !endDate) {
+        alert('Wypełnij wszystkie pola formularza.');
+        return;
+    }
 
+    const scheduledDates = generateDates(startDate, frequency, endDate);
+    if (scheduledDates.length === 0) {
+        alert('Zweryfikuj daty (data końca mniejsza od daty startowej?).');
+        return;
+    }
+
+    console.log('[PowerTools] Wygenerowane daty:', scheduledDates);
+
+    // Zamykamy modal przed procesowaniem
     closePowerToolsModal();
+
+    // Wywołanie logiki API
+    const confirmMsg = `Wygenerowano ${scheduledDates.length} terminów.\\nCzy chcesz rozesłać te zapytania do kalendarza Garmin?`;
+    if (confirm(confirmMsg)) {
+        await executeScheduling(scheduledDates);
+    }
 }
 
 function injectCustomButton() {
@@ -82,9 +178,8 @@ function injectCustomButton() {
             ourBtn.textContent = 'Zaplanuj cyklicznie (PowerTools)';
             ourBtn.className = addToCalendarBtn.className;
 
-            // Adding a few inline styles to make it stand out or fit right in case class copying isn't enough
             ourBtn.style.marginLeft = '10px';
-            ourBtn.style.backgroundColor = '#007cc3'; // Garmin's typical blue
+            ourBtn.style.backgroundColor = '#007cc3';
             ourBtn.style.color = '#fff';
 
             ourBtn.addEventListener('click', (e) => {
@@ -93,29 +188,24 @@ function injectCustomButton() {
                 openPowerToolsModal();
             });
 
-            // Insert it next to the found button
             addToCalendarBtn.parentNode.insertBefore(ourBtn, addToCalendarBtn.nextSibling);
             console.log('Garmin PowerTools: Custom schedule button injected.');
         }
     }
 }
 
-// Initialization and MutationObserver
 function init() {
     if (!document.getElementById('powertools-modal-backdrop')) {
         createPowerToolsModal();
     }
 
     const observer = new MutationObserver((mutations) => {
-        // Try to inject the button anytime DOM changes, because Garmin is a SPA.
-        // `injectCustomButton` already checks if button exists to avoid duplicates.
         injectCustomButton();
     });
 
     observer.observe(document.body, { childList: true, subtree: true });
 }
 
-// Start watching when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {
